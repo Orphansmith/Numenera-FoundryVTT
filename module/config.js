@@ -97,6 +97,8 @@ NUMENERA.damageTrack = [
   }
 ];
 
+NUMENERA.totalRecoveries = 4;
+
 NUMENERA.recoveries = {
   "action": "NUMENERA.pc.recovery.action",
   "tenMin": "NUMENERA.pc.recovery.tenMin",
@@ -126,10 +128,17 @@ NUMENERA.abilityTypes = [
   "NUMENERA.item.ability.type.enabler",
 ];
 
-NUMENERA.cypherTypes = [
-  "NUMENERA.pc.numenera.cypher.type.anoetic",
-  "NUMENERA.pc.numenera.cypher.type.occultic",
-];
+NUMENERA.cypherTypes = {
+  numenerav1: {
+    "anoetic": "NUMENERA.item.cypher.type.anoetic",
+    "occultic": "NUMENERA.item.cypher.type.occultic",
+  },
+  cypherSystem: {
+    "subtle": "NUMENERA.item.cypher.type.subtle",
+    "manifest": "NUMENERA.item.cypher.type.manifest",
+    "fantastic": "NUMENERA.item.cypher.type.fantastic",
+  },
+};
 
 // Note that these colors do not get propagated to the CSS; that would be neat, though
 NUMENERA.attributeColors = {

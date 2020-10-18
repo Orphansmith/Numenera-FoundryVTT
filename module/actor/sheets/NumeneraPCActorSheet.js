@@ -1,5 +1,11 @@
-import { confirmDeletion } from "../../apps/ConfirmationDialog.js";
+import  "../../../lib/dragula/dragula.js";
+
 import { NUMENERA } from "../../config.js";
+
+import { confirmDeletion } from "../../apps/ConfirmationDialog.js";
+import { EffortDialog } from "../../apps/EffortDialog.js";
+import { RecoveryDialog } from "../../apps/RecoveryDialog.js";
+
 import { NumeneraAbilityItem } from "../../item/NumeneraAbilityItem.js";
 import { NumeneraArtifactItem } from "../../item/NumeneraArtifactItem.js";
 import { NumeneraArmorItem } from "../../item/NumeneraArmorItem.js";
@@ -10,25 +16,27 @@ import { NumeneraSkillItem } from "../../item/NumeneraSkillItem.js";
 import { NumeneraWeaponItem } from "../../item/NumeneraWeaponItem.js";
 import { StrangeRecursionItem } from "../../item/StrangeRecursionItem.js";
 
-import  "../../../lib/dragula/dragula.js";
-import { RecoveryDialog } from "../../apps/RecoveryDialog.js";
-
 //Common Dragula options
 const dragulaOptions = {
   moves: function (el, container, handle) {
-    return handle.classList.contains('handle');
-  }
+    return handle.classList.contains("handle");
+  },
 };
 
 //Sort function for order
 const sortFunction = (a, b) => a.data.order < b.data.order ? -1 : a.data.order > b.data.order ? 1 : 0;
 
+// Stolen from https://stackoverflow.com/a/34064434/20043
+function htmlDecode(input) {
+  var doc = new DOMParser().parseFromString(input, "text/html");
+  return doc.documentElement.textContent;
+}
+
 //Function to remove any HTML markup from eg. item descriptions
 function removeHtmlTags(str) {
   // Replace any HTML tag ('<...>') by an empty string
-  return str.replace(/<.+?>/gi, "")
-  // Replace non-breaking spaces by a regular one
-            .replace("&nbsp;", " ");
+  // and then un-escape any HTML escape codes (eg. &lt;)
+  return htmlDecode(str.replace(/<.+?>/gi, ""));
 }
 
 /**
@@ -112,6 +120,7 @@ function onItemDeleteGenerator(deleteType, callback = null) {
     event.preventDefault();
 
     if (await confirmDeletion(deleteType)) {
+      //TODO this is not 100% appropriate now that we might use grids
       const elem = event.currentTarget.closest("." + deleteType);
       const itemId = elem.dataset.itemId;
       const toDelete = this.actor.data.items.find(i => i._id === itemId);
@@ -134,7 +143,7 @@ export class NumeneraPCActorSheet extends ActorSheet {
       "table.abilities",
       "table.armor",
       "table.equipment",
-      "table.skills",
+      "div.skills",
       "table.weapons",
       "ul.cyphers",
       "ul.artifacts",
@@ -153,7 +162,7 @@ export class NumeneraPCActorSheet extends ActorSheet {
         "form.numenera table.abilities",
         "form.numenera table.armor",
         "form.numenera table.equipment",
-        "form.numenera table.skills",
+        "form.numenera div.skills",
         "form.numenera table.weapons",
         "form.numenera ul.artifacts",
         "form.numenera ul.cyphers",
@@ -217,12 +226,9 @@ export class NumeneraPCActorSheet extends ActorSheet {
    * Get the correct HTML template path to use for rendering this particular sheet
    * @type {String}
    */
-   get template() {
-    if (game.settings.get("numenera", "worldSetting") === 2)
-      return "systems/numenera/templates/actor/characterSheetStrange.html";
-    else
-      return "systems/numenera/templates/actor/characterSheet.html";
-  }
+  get template() {
+    return "systems/numenera/templates/actor/characterSheet.html";
+    }
 
   /**
    * Provides the data objects provided to the character sheet. Use that method
@@ -231,8 +237,31 @@ export class NumeneraPCActorSheet extends ActorSheet {
   getData() {
     const sheetData = super.getData();
 
-    const useCypherTypes = (game.settings.get("numenera", "systemVersion") === 1);
+    //TODO improve this, c'mon man, you can do better!
+    let cypherTypeFlavor;
+    switch (game.settings.get("numenera", "cypherTypesFlavor")) {
+      case 1: //none
+        cypherTypeFlavor = null;
+        break;
+
+      case 2: //anoetic/occultic
+      cypherTypeFlavor = "numenerav1";
+        break;
+
+      case 3: //subtle/manifest/fantastic
+        cypherTypeFlavor = "cypherSystem";
+        break;
+    }
+
+    const useCypherTypes = !!cypherTypeFlavor;
     sheetData.displayCypherType = useCypherTypes;
+    if (useCypherTypes)
+      sheetData.cypherTypes = NUMENERA.cypherTypes[cypherTypeFlavor];
+
+    //Is it The Strange?
+    if (game.settings.get("numenera", "characterSheet") == 2) {
+      sheetData.isTheStrange = true;
+    }
 
     // Add relevant data from system settings
     sheetData.settings = {
@@ -259,9 +288,6 @@ export class NumeneraPCActorSheet extends ActorSheet {
       sheetData.stats[prop] = game.i18n.localize(NUMENERA.stats[prop]);
     }
 
-    if (useCypherTypes)
-      sheetData.cypherTypes = NUMENERA.cypherTypes;
-
     sheetData.advances = Object.entries(sheetData.actor.data.advances).map(
       ([key, value]) => {
         return {
@@ -275,13 +301,12 @@ export class NumeneraPCActorSheet extends ActorSheet {
     sheetData.damageTrackData = NUMENERA.damageTrack;
     sheetData.damageTrackDescription = NUMENERA.damageTrack[sheetData.data.damageTrack].description;
 
-    // TODO remove hardcoded value: 4
     sheetData.recoveriesData = Object.entries(NUMENERA.recoveries)
     .map(([key, value], idx) => {
       return {
         key,
         label: value,
-        checked: 4 - this.actor.data.data.recoveriesLeft > idx
+        checked: !this.actor.data.data.recoveries[idx],
       };
     });
 
@@ -314,7 +339,7 @@ export class NumeneraPCActorSheet extends ActorSheet {
         artifact.name = game.i18n.localize("NUMENERA.pc.numenera.artifact.unidentified");
         artifact.data.level = game.i18n.localize("NUMENERA.unknown");
         artifact.data.effect = game.i18n.localize("NUMENERA.unknown");
-        artifact.data.depletion = null;  
+        artifact.data.depletion = null;
       }
       else {
         artifact.data.effect = removeHtmlTags(artifact.data.effect);
@@ -340,6 +365,11 @@ export class NumeneraPCActorSheet extends ActorSheet {
         cypher.data.effect = removeHtmlTags(cypher.data.effect);
       }
 
+      if (useCypherTypes && cypher.data.identified && !cypher.data.cypherType) {
+        //Use the very first object key as property since none has been defined yet
+        cypher.data.cypherType = Object.keys(NUMENERA.cypherTypes[cypherTypeFlavor]);
+      }
+
       cypher.showIcon = cypher.img && sheetData.settings.icons.numenera;
       return cypher;
     });
@@ -362,6 +392,7 @@ export class NumeneraPCActorSheet extends ActorSheet {
       return ability;
     });
 
+    sheetData.skillGridClass = sheetData.settings.icons.skills ? "skills-grid-with-icon" : "skills-grid";
     sheetData.data.items.skills = sheetData.data.items.skills.map(skill => {
       skill.stats = NUMENERA.stats;
       skill.showIcon = skill.img && sheetData.settings.icons.skills;
@@ -401,7 +432,7 @@ export class NumeneraPCActorSheet extends ActorSheet {
 
     html.find("input.focus").on("change", this.actor.setFocusFromEvent.bind(this.actor));
 
-    html.find("div.stats").on("click", "a.rollable", this.onAttributeRoll.bind(this));
+    html.find("div.stats").on("click", "a.rollable", this.onAttributeUse.bind(this));
 
     const abilitiesTable = html.find("table.abilities");
     abilitiesTable.on("click", ".ability-create", this.onAbilityCreate.bind(this));
@@ -419,7 +450,7 @@ export class NumeneraPCActorSheet extends ActorSheet {
     equipmentTable.on("click", ".equipment-delete", this.onEquipmentDelete.bind(this));
     equipmentTable.on("blur", "input,select", this.onEquipmentEdit.bind(this));
 
-    const skillsTable = html.find("table.skills");
+    const skillsTable = html.find("div.skills");
     skillsTable.on("click", ".skill-create", this.onSkillCreate.bind(this));
     skillsTable.on("click", ".skill-delete", this.onSkillDelete.bind(this));
     skillsTable.on("change", "input,select", this.onSkillEdit.bind(this));
@@ -459,7 +490,9 @@ export class NumeneraPCActorSheet extends ActorSheet {
     drakes.push(dragula([document.querySelector("table.abilities > tbody")], Object.assign({}, dragulaOptions)));
     drakes.push(dragula([document.querySelector("table.armor > tbody")], Object.assign({}, dragulaOptions)));
     drakes.push(dragula([document.querySelector("table.equipment > tbody")], Object.assign({}, dragulaOptions)));
-    drakes.push(dragula([document.querySelector("table.skills > tbody")], Object.assign({}, dragulaOptions)));
+
+    //TODO HALP!!! div grids do not have a container element for rows... this is bad for Dragula :(
+    drakes.push(dragula([document.querySelector("div.skills:before")], Object.assign({}, dragulaOptions)));
     drakes.push(dragula([document.querySelector("table.weapons > tbody")], Object.assign({}, dragulaOptions)));
 
     drakes.push(dragula([document.querySelector("ul.artifacts")], Object.assign({}, dragulaOptions)));
@@ -471,18 +504,18 @@ export class NumeneraPCActorSheet extends ActorSheet {
     drakes.map(drake => drake.on("drop", this.reorderElements.bind(this)));
 
     if (this.actor.owner) {
-      const handler = ev => this._onDragItemStart(ev);
+      const handler = ev => this._onDragStart(ev);
 
-      // Find all abilitiy items on the character sheet.
-      html.find('tr.ability,tr.skill,tr.weapon,tr.recursion').each((i, tr) => {
+      // Find all abilitiy, skill, weapon and recursion items on the character sheet.
+      html.find('tr.ability,tr.skill,tr.weapon,tr.recursion').each((i, elem) => {
         // Add draggable attribute and dragstart listener.
-        tr.setAttribute("draggable", true);
-        tr.addEventListener("dragstart", handler, false);
+        elem.setAttribute("draggable", true);
+        elem.addEventListener("dragstart", handler, false);
       });
     }
   }
 
-  _onDragItemStart(event) {
+  _onDragStart(event) {
     const itemId = event.currentTarget.dataset.itemId;
 
     const clickedItem = duplicate(
@@ -500,7 +533,7 @@ export class NumeneraPCActorSheet extends ActorSheet {
       })
     );
 
-    return super._onDragItemStart(event);
+    return super._onDragStart(event);
   }
 
   async reorderElements(el, target, source, sibling) {
@@ -525,16 +558,31 @@ export class NumeneraPCActorSheet extends ActorSheet {
    * @returns
    * @memberof NumeneraPCActorSheet
    */
-  onAttributeRoll(event) {
+  onAttributeUse(event) {
     event.preventDefault();
-    return this.actor.rollAttribute(event.target.parentElement.dataset.stat);
+    let stat = event.target.closest(".stats").dataset.stat;
+
+    if (event.ctrlKey || event.metaKey) {
+      stat = stat.toLowerCase();
+      new EffortDialog(this.actor, { stat }).render(true);
+    }
+    else {
+      return this.actor.rollAttribute(stat);
+    }
   }
 
   onSkillUse(event) {
     event.preventDefault();
     const skillId = event.target.closest(".skill").dataset.itemId;
 
-    return this.actor.rollSkillById(skillId, event.shiftKey);
+    //TODO use the use() method of NumeneraSkillItem, do the same for other Item types
+
+    if (event.ctrlKey || event.metaKey) {
+      new EffortDialog(this.actor, {skill: this.actor.getOwnedItem(skillId)}).render(true);
+    }
+    else {
+      return this.actor.rollSkillById(skillId);
+    }
   }
 
   async onWeaponUse(event) {
@@ -563,7 +611,12 @@ export class NumeneraPCActorSheet extends ActorSheet {
       skill.data.name = skillName;
     }
 
-    return this.actor.rollSkill(skill, event.shiftKey);
+    if (event.ctrlKey || event.metaKey) {
+      new EffortDialog(this.actor, { skill }).render(true);
+    }
+    else {
+      this.actor.rollSkill(skill);
+    }
   }
 
   /**
@@ -579,7 +632,14 @@ export class NumeneraPCActorSheet extends ActorSheet {
     if (!abilityId)
       return;
 
-    await this.actor.useAbilityById(abilityId);
+    //TODO use the use() method of NumeneraSkillItem, do the same for other Item types
+
+    if (event.ctrlKey || event.metaKey) {
+      new EffortDialog(this.actor, {ability: this.actor.getOwnedItem(abilityId)}).render(true);
+    }
+    else {
+      await this.actor.useAbilityById(abilityId);
+    }
   }
 
   onArtifactDepletionRoll(event) {
@@ -598,7 +658,7 @@ export class NumeneraPCActorSheet extends ActorSheet {
     const roll = new Roll(depletion.die).roll();
 
     roll.toMessage({
-      speaker: ChatMessage.getSpeaker({ actor: this.actor }),
+      speaker: ChatMessage.getSpeaker(),
       flavor: `Depletion roll for ${artifact.name}<br/>${game.i18n.localize("NUMENERA.item.artifact.depletionThreshold")}: ${depletion.threshold}`,
     });
   }
@@ -648,15 +708,19 @@ export class NumeneraPCActorSheet extends ActorSheet {
     super._onChangeInput(event);
   }
 
-  _onDrop(event) {
-    super._onDrop(event);
+  _onDropItem(event, data) {
+    super._onDropItem(event, data);
 
-    const {type, id} = JSON.parse(event.dataTransfer.getData("text/plain"));
+    const { id } = JSON.parse(event.dataTransfer.getData("text/plain"));
 
-    if (type !== "Item")
+    if (!id)
       return;
 
     const item = Item.collection.entities.find(i => i._id == id)
+
+    //To avoid "false drops"
+    if (!item)
+      return;
 
     switch (item.data.type) {
       case "armor":
